@@ -14,7 +14,7 @@ ReadJoypads:
   stx   Joypad1Last
 
   !A16
-  lda.w  JOY1L
+  lda.w JOY1L
   sta   Joypad1
   
   ; X = Current joypad state
@@ -41,3 +41,18 @@ ReadJoypads:
 
 
   rts
+
+
+; Buttons bitmasks
+!JOY_Button_B       = "(1<<15)"     
+!JOY_Button_Y       = "(1<<14)"     
+!JOY_Select_Button  = "(1<<13)"     
+!JOY_Start_Button   = "(1<<12)"     
+!JOY_DPAD_Up        = "(1<<11)"     
+!JOY_DPAD_Down      = "(1<<10)"     
+!JOY_DPAD_Left      = "(1<<9)"      
+!JOY_DPAD_Right     = "(1<<8)"      
+!JOY_Button_A       = "(1<<7)"      
+!JOY_Button_X       = "(1<<6)"      
+!JOY_Button_L       = "(1<<5)"      
+!JOY_Button_R       = "(1<<4)"      
