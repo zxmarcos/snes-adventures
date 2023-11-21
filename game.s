@@ -119,7 +119,10 @@ UpdatePlayer:
   ldx   player.speed
   stx   player.timer
 
+  ; A = 0x0000
+  lda.w #$0000
   !A8
+  
   lda   player.dir
   ldx.w #0
   asl   ; Jump table has 2 bytes for each entry.
