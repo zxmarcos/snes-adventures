@@ -10,5 +10,5 @@ base $8000
 incsrc "lib/regs.s"
 incsrc "lib/utils.s"
 incsrc "lib/gfx.s"
-incsrc "game.s"
 incsrc "lib/joypad.s"
+incsrc "game.s"

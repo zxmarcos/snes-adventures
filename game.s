@@ -58,8 +58,13 @@ Start:
   stx   player.y
   stx   player.last_x
   stx   player.last_y
+  stx   BG1_SCROLL_X
+  stx   BG1_MOSAIC
+  stx   BG1_MOSAIC_TIMER
 
   stx   Temp1
+  ldx   #$33
+  stx   rand_seed
 
   ; 30ticks 
   ldx.w #10
@@ -71,16 +76,22 @@ Start:
 .loop:
   jmp   .loop
 
-
-
 NMI:
+  ; %DisableNMI()
   php
+  sei
   pha
 
   ; Wait for joypad reading
   jsr   ReadJoypads
   jsr   UpdatePlayer
+
+  jsr   GenerateFood
+  jsr   DrawFood
+
   jsr   DrawPlayer
+  
+  jsr   UpdateBackground
 
   ; ACK NMI
   !A8
@@ -88,6 +99,8 @@ NMI:
 
   pla
   plp
+  cli
+  ;%EnableNMI()
   rti
 
 
@@ -119,16 +132,19 @@ UpdatePlayer:
   ldx   player.speed
   stx   player.timer
 
-  ; A = 0x0000
-  lda.w #$0000
-  !A8
-  
-  lda   player.dir
-  ldx.w #0
-  asl   ; Jump table has 2 bytes for each entry.
-  tax   
-  jmp   (.jump_table,x)
 
+  !A16
+  ; A = 0x0000
+  lda   #$0000
+  
+  !A8
+  lda   player.dir
+  ldx   #$0000
+  asl   ; Jump table has 2 bytes for each entry.
+  tax
+  jmp   (.jump_table,x)
+.stuck:
+  brk
 .positiveX:
   jsr   PlayerMoveRight
   jmp   .end
@@ -228,6 +244,99 @@ PlayerMoveDown:
 .end
   rts
 
+
+GenerateFood:
+  php
+  !A16
+  lda #$0000
+  !A8
+  !XY16
+
+  jsr   Rand8
+  and   #$1F  ; X%32
+  tax
+  jsr   Rand8
+  and   #$1F
+
+.round:
+  cmp   #27
+  ; Y < 17
+  bcc   .ok
+  ; Y = (Y + 1) / 2
+  ; inc
+  lsr
+  jmp   .round
+
+.ok:
+  tay
+
+  !A16
+  stx   player.food_x
+  sty   player.food_y
+  plp
+  rts
+
+;; *******************************************************
+;; Update background "animations"
+;; *******************************************************
+UpdateBackground:
+  ; Update scrolling
+  !A8
+  !XY8
+  lda   BG1_SCROLL_X
+  inc
+  sta   BG1_SCROLL_X
+  sta   BG1HOFS
+  sta   BG1VOFS
+
+  jmp   .end
+
+  ; Update mosaic effect
+  ldx   BG1_MOSAIC_TIMER
+  bne   .updateMosaicTimer
+
+  ldx   #60
+  stx   BG1_MOSAIC_TIMER
+
+  lda   BG1_MOSAIC
+  ldx   BG1_MOSAIC_TIMER+1
+  bne   .backward
+  
+.forward:
+  inc
+  cmp   #1
+  bcc   .writeMosaic
+  ldx   #1
+  stx   BG1_MOSAIC_TIMER+1
+  jmp   .writeMosaic
+
+.backward:
+  dec
+  cmp   #0
+  bne   .writeMosaic
+  ldx   #0
+  stx   BG1_MOSAIC_TIMER+1
+
+.writeMosaic:
+  sta   BG1_MOSAIC
+  
+  ; Factor << 4 
+  asl
+  asl
+  asl
+  asl
+  ; BG1 only
+  ora   #$01
+  sta   MOSAIC
+  jmp   .end
+
+.updateMosaicTimer:
+  dex
+  stx   BG1_MOSAIC_TIMER
+.end:
+
+  rts
+
 ;; *******************************************************
 ;; Drawing logic
 ;; *******************************************************
@@ -248,13 +357,27 @@ DrawPlayer:
   stx   DRAW_TILE_Y
   ldx   player.x
   stx   DRAW_TILE_X
+  ; Tile 2, Palette 1, Higher priority 
+  ldx.w #2|(1<<10)|(1<<13)
+  stx   DRAW_TILE_ATTR
+  jsr   DrawTileBG1XY
+
+  rts
+
+; TODO: Move food to OAM.
+DrawFood:
+  !AXY16
+  ; Draw new position
+  ldx   player.food_y
+  stx   DRAW_TILE_Y
+  ldx   player.food_x
+  stx   DRAW_TILE_X
   ; Tile 1, Palette 1, Higher priority 
   ldx.w #1|(1<<10)|(1<<13)
   stx   DRAW_TILE_ATTR
   jsr   DrawTileBG1XY
 
   rts
-
 
 DrawTileBG1XY:
   php
@@ -296,12 +419,20 @@ X32LUT:
     !i #= !i+1
   endif
 
+; title_pal:
+;   incbin  "gfx/title.pal"
+; title_charset:
+;   incbin  "gfx/title.chr"
+; title_map:
+;   incbin  "gfx/title.map"
+
+
 title_pal:
-  incbin  "gfx/title.pal"
+  incbin  "gfx/grass.pal"
 title_charset:
-  incbin  "gfx/title.chr"
+  incbin  "gfx/grass.chr"
 title_map:
-  incbin  "gfx/title.map"
+  incbin  "gfx/grass.map"
 
 
 char_pal:
