@@ -56,11 +56,14 @@ Start:
   stx   Joypad1Hold
   stx   player.x
   stx   player.y
+  stx   body_parts_x
+  stx   body_parts_y
   stx   player.last_x
   stx   player.last_y
   stx   BG1_SCROLL_X
   stx   BG1_MOSAIC
   stx   BG1_MOSAIC_TIMER
+  stx   player.length
 
   stx   Temp1
   ldx   #$33
@@ -87,12 +90,9 @@ NMI:
   jsr   ReadJoypads
   jsr   UpdatePlayer
 
-  ; jsr   GenerateFood
   jsr   DrawFood
-
   jsr   DrawPlayer
-  
-  ; jsr   UpdateBackground
+  jsr   UpdateBackground
 
   ; ACK NMI
   !A8
@@ -112,10 +112,10 @@ UpdatePlayer:
   !AXY16
 
   ; Save old values
-  ldx   player.x
-  stx   player.last_x
-  ldx   player.y
-  stx   player.last_y
+  ; ldx   player.x
+  ; stx   player.last_x
+  ; ldx   player.y
+  ; stx   player.last_y
 
   jsr   UpdateDirectionFromJoypad
 
@@ -148,24 +148,90 @@ UpdatePlayer:
   brk
 .positiveX:
   jsr   PlayerMoveRight
-  jmp   .end
+  jmp   .updateBody
 .negativeX:
   jsr   PlayerMoveLeft
-  jmp   .end
+  jmp   .updateBody
 .positiveY:
   jsr   PlayerMoveUp
-  jmp   .end
+  jmp   .updateBody
 .negativeY:
   jsr   PlayerMoveDown
-  jmp   .end
+  jmp   .updateBody
 .jump_table:
   dw .positiveX, .negativeX, .positiveY, .negativeY
-.end:
 
+.updateBody:
   jsr   CheckFood
+  jsr   UpdateBodyParts
 
+.end:
   rts
 
+
+UpdateBodyParts:
+  php
+  !AXY16
+
+  ; Update last x & y
+  lda   player.length
+  asl
+  tax
+  lda   body_parts_x,x
+  sta   player.last_x
+  lda   body_parts_y,x
+  sta   player.last_y
+  
+
+  ; BodyParts[0].x = player.x, BodyParts[0].y = player.y
+  lda   player.x
+  sta   body_parts_x
+  lda   player.y
+  sta   body_parts_y
+
+  
+  lda   player.length
+  tay
+
+  ; BodyPos == 0? nothing to do...
+  beq   .end
+
+  ; Loop(i) = BodyParts[i] = BodyParts[i-1]
+  ; i = Y
+.loop:
+  
+  ; PTR[i-1] = (Y - 1) * 2
+  tya
+  dec
+  asl
+  ; X = PTR[i-1]
+  tax
+  ; Temp1 = BodyParts[i-1].x 
+  lda     body_parts_x,x
+  sta     Temp1 
+  ; Temp2 = BodyParts[i-1].y
+  lda     body_parts_y,x
+  sta     Temp2
+
+  ; PTR[i] = Y * 2
+  tya
+  asl
+  ; X = PTR[i]
+  tax
+
+  ; BodyParts[i-1].y = Temp2 
+  lda     Temp1
+  sta     body_parts_x,x
+
+  ; BodyParts[i-1].y = Temp2 
+  lda     Temp2
+  sta     body_parts_y,x  
+  
+  dey
+  bne   .loop
+.end:
+  plp
+  rts
 
 CheckFood:
   php
@@ -180,6 +246,7 @@ CheckFood:
   bne   .end
 
   jsr   GenerateFood
+  inc   player.length
 
 .end:
   plp
@@ -391,15 +458,34 @@ DrawPlayer:
   stx   DRAW_TILE_ATTR
   jsr   DrawTileBG1XY
 
-  ; Draw new position
-  ldx   player.y
-  stx   DRAW_TILE_Y
-  ldx   player.x
-  stx   DRAW_TILE_X
+  ; Draw each body part.
+  ldy   player.length
+  
+.drawNextPart:
+  phy
+
+  ; PTR = BodyParts[y]
+  tya
+  asl
+  tax
+
+  lda   body_parts_x,x
+  sta   DRAW_TILE_X
+  lda   body_parts_y,x
+  sta   DRAW_TILE_Y
+
   ; Tile 2, Palette 1, Higher priority 
   ldx.w #2|(1<<10)|(1<<13)
   stx   DRAW_TILE_ATTR
   jsr   DrawTileBG1XY
+
+
+  ply
+  beq   .end
+  dey
+  bne   .drawNextPart
+
+.end:
 
   rts
 

@@ -10,19 +10,6 @@ Joypad1Down: skip 2
 Joypad1Up:   skip 2
 Joypad1Hold: skip 2
 
-struct player
-    .x      skip 2
-    .y      skip 2
-    .last_x skip 2
-    .last_y skip 2
-    .speed  skip 2
-    .timer  skip 2
-    .dir    skip 1
-    .food_x skip 2
-    .food_y skip 2
-endstruct
-skip sizeof(player)
-
 
 ; Temporary variables
 Temp1: skip 2
@@ -50,3 +37,23 @@ BG1_MOSAIC_TIMER: skip 2
 
 !BOARD_WIDTH = 31
 !BOARD_HEIGHT = 27
+!MAX_BODY_LENGTH = 100
+
+struct player
+    .x          skip 2
+    .y          skip 2
+    .last_x     skip 2
+    .last_y     skip 2
+    .speed      skip 2
+    .timer      skip 2
+    .dir        skip 2
+    .food_x     skip 2
+    .food_y     skip 2
+    .length     skip 2
+endstruct
+skip sizeof(player)
+
+
+
+body_parts_x: skip 2*!MAX_BODY_LENGTH
+body_parts_y: skip 2*!MAX_BODY_LENGTH
