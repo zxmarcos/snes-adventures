@@ -71,6 +71,7 @@ Start:
   stx   player.speed
   stx   player.timer
 
+  jsr   GenerateFood
   
   cli
 .loop:
@@ -86,12 +87,12 @@ NMI:
   jsr   ReadJoypads
   jsr   UpdatePlayer
 
-  jsr   GenerateFood
+  ; jsr   GenerateFood
   jsr   DrawFood
 
   jsr   DrawPlayer
   
-  jsr   UpdateBackground
+  ; jsr   UpdateBackground
 
   ; ACK NMI
   !A8
@@ -160,13 +161,35 @@ UpdatePlayer:
 .jump_table:
   dw .positiveX, .negativeX, .positiveY, .negativeY
 .end:
+
+  jsr   CheckFood
+
+  rts
+
+
+CheckFood:
+  php
+  !A16
+  ; X == Food.X?
+  lda   player.x
+  cmp   player.food_x  
+  bne   .end
+  ; Y == Food.Y?
+  lda   player.y
+  cmp   player.food_y 
+  bne   .end
+
+  jsr   GenerateFood
+
+.end:
+  plp
   rts
 
 
 ;; Update player movement using joypad dpad
 UpdateDirectionFromJoypad:
   !AXY16
-  lda   Joypad1Up
+  lda   Joypad1Down
 
 .updateRight:
   bit.w #!JOY_DPAD_Right
@@ -209,61 +232,77 @@ UpdateDirectionFromJoypad:
 PlayerMoveLeft:
   ldx   player.x
   cpx.w #0
-  beq   .end
+  beq   .wrap
   dex
   stx   player.x
-.end
+  jmp   .end
+.wrap:
+  ldx.w #!BOARD_WIDTH
+  stx   player.x
+.end:
   rts
 
 
 PlayerMoveRight:
   ldx   player.x
-  cpx.w #32
-  bcs   .end
+  cpx.w #!BOARD_WIDTH
+  bcs   .wrap
   inx
   stx   player.x
-.end
+  jmp   .end
+.wrap:
+  ldx   #$0000
+  stx   player.x
+.end:
   rts
 
 PlayerMoveUp:
   ldx   player.y
   cpx.w #0
-  beq   .end
+  beq   .wrap
   dex
   stx   player.y
-.end
+  jmp   .end
+.wrap:
+  ldx.w #!BOARD_HEIGHT
+  stx   player.y
+.end:
   rts
 
 
 PlayerMoveDown:
   ldx   player.y
-  cpx.w #27
-  beq   .end
+  cpx.w #!BOARD_HEIGHT
+  beq   .wrap
   inx
   stx   player.y
-.end
+  jmp   .end
+.wrap:
+  ldx   #$0000
+  stx   player.y
+.end:
   rts
 
 
 GenerateFood:
   php
   !A16
-  lda #$0000
+  lda   #$0000
   !A8
   !XY16
 
   jsr   Rand8
   and   #$1F  ; X%32
   tax
+  phx
   jsr   Rand8
   and   #$1F
-
+  plx
 .round:
   cmp   #27
   ; Y < 17
   bcc   .ok
-  ; Y = (Y + 1) / 2
-  ; inc
+  ; Y = Y/2
   lsr
   jmp   .round
 
