@@ -5,7 +5,8 @@ if ($LASTEXITCODE -ne 0) {
     Exit 1   
 }
 
-$build = asar main.s output/rom.sfc
+$clean = del output/rom.sfc
+$build = asar --symbols=wla main.s output/rom.sfc
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Build complete!"
