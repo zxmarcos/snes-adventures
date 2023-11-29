@@ -4,38 +4,66 @@ Start:
   clc
   xce
 
+  jsr   SetupPPU
+  jsr   ClearSRAM
+
+  ; Copy S-CPU code to WRAM
+  !AXY16
+
+  ; Copy dummy vectors to 00:0100
+  lda   #DummyVector_0100_end-DummyVector_0100-1
+  ldx   #DummyVector_0100
+  ldy   #$0100
+  mvn   $00,$00
+
+  ; A = size, X = src, Y = dst
+  lda   #RunGSUCode_WRAM_end-RunGSUCode_WRAM-1
+  ldx   #RunGSUCode
+  ldy   #RunGSUCode_WRAM
+  ; Copy from Bank $00->$00
+  mvn   $00,$00
+
+  jsr   RunGSUCode_WRAM
+
+  
+  ; Copy SRAM (GSU) to VRAM
+  %LoadToVRAM($700000,$8000,$0000)
+
+  jsr   EnableVideo
+
+.loop:
+  wai
+  jsr   RunGSUCode_WRAM
+  jmp   .loop
+
+SetupPPU:
   !A8
   ; Mode 1, 8x8
   lda.b #1
   sta   BGMODE
 
   ; BG1Char = $0000, BG2Char = $3000
-  lda   #$30
-  sta   BG12NBA
+  lda   #$00
+  sta   BG34NBA
   
-  ; BG1Map = $2000
-  lda   #$20
-  sta   BG1SC
-  ; BG2Map = $4000
+  ; BG1Map = $4000
   lda   #$40
-  sta   BG2SC
-
-  %LoadPalette(0, title_pal, datasize(title_pal))
-  %LoadToVRAM(title_charset, datasize(title_charset), 0)
-  %LoadToVRAM(title_map, datasize(title_map), $2000)
-
-
-  %LoadPalette($10, char_pal, datasize(char_pal))
-  %LoadToVRAM(char_charset, datasize(char_charset), $3000)
-
-
-  ; Clear BG2 maptable
-  %ClearVRAM($4000,32*32*2)
+  sta   BG3SC
 
   ; Enable BG1 & BG2 layer
   !A8
-  lda   #$03
+  lda   #$04
   sta   TM
+
+  %LoadPalette(0, title_pal, datasize(title_pal))
+  %LoadToVRAM(screen_map,datasize(screen_map),$4000)
+  rts
+
+EnableVideo:
+  !A8
+
+  lda   #$00
+  sta   SETINI
 
   ; Enable video output
   lda   #$0F
@@ -44,527 +72,313 @@ Start:
   ; Enable NMI ($80) + Joypad Auto Read ($01)
   lda   #$81
   sta   NMITIMEN
+  rts
 
-  ; Clear state
-  !XY16
-  ldx.w #0
-
-  stx   Joypad1
-  stx   Joypad1Last
-  stx   Joypad1Down
-  stx   Joypad1Up
-  stx   Joypad1Hold
-  stx   player.x
-  stx   player.y
-  stx   body_parts_x
-  stx   body_parts_y
-  stx   player.last_x
-  stx   player.last_y
-  stx   BG1_SCROLL_X
-  stx   BG1_MOSAIC
-  stx   BG1_MOSAIC_TIMER
-  stx   player.length
-
-  stx   Temp1
-  ldx   #$33
-  stx   rand_seed
-
-  ; 30ticks 
-  ldx.w #10
-  stx   player.speed
-  stx   player.timer
-
-  jsr   GenerateFood
-  
-  cli
+ClearSRAM:
+  !AXY16
+  lda   #$0000
+  ldx   #$0000
 .loop:
-  jmp   .loop
+  sta.l $700000,x
+  inx
+  inx
+  cpx.w  #32*32*32
+  bcc   .loop
+  rts
 
 NMI:
-  ; %DisableNMI()
   php
-  sei
   pha
-
-  ; Wait for joypad reading
-  jsr   ReadJoypads
-  jsr   UpdatePlayer
-
-  jsr   DrawFood
-  jsr   DrawPlayer
-  jsr   UpdateBackground
-
-  ; ACK NMI
-  !A8
-  lda   RDNMI
-
-  pla
-  plp
-  cli
-  ;%EnableNMI()
-  rti
-
-
-;; *******************************************************
-;; Player movement logic
-;; *******************************************************
-UpdatePlayer:
-  !AXY16
-
-  ; Save old values
-  ; ldx   player.x
-  ; stx   player.last_x
-  ; ldx   player.y
-  ; stx   player.last_y
-
-  jsr   UpdateDirectionFromJoypad
-
-  ; Check if move timer expired
-  ldx   player.timer
-  dex
-  beq   .move
-
-  ; Reload timer.
-  stx   player.timer
-  jmp   .end
-
-.move:
-  ; reload timer from speed
-  ldx   player.speed
-  stx   player.timer
-
-
-  !A16
-  ; A = 0x0000
-  lda   #$0000
-  
-  !A8
-  lda   player.dir
-  ldx   #$0000
-  asl   ; Jump table has 2 bytes for each entry.
-  tax
-  jmp   (.jump_table,x)
-.stuck:
-  brk
-.positiveX:
-  jsr   PlayerMoveRight
-  jmp   .updateBody
-.negativeX:
-  jsr   PlayerMoveLeft
-  jmp   .updateBody
-.positiveY:
-  jsr   PlayerMoveUp
-  jmp   .updateBody
-.negativeY:
-  jsr   PlayerMoveDown
-  jmp   .updateBody
-.jump_table:
-  dw .positiveX, .negativeX, .positiveY, .negativeY
-
-.updateBody:
-  jsr   CheckFood
-  jsr   UpdateBodyParts
-
-.end:
-  rts
-
-
-UpdateBodyParts:
-  php
-  !AXY16
-
-  ; Update last x & y
-  lda   player.length
-  asl
-  tax
-  lda   body_parts_x,x
-  sta   player.last_x
-  lda   body_parts_y,x
-  sta   player.last_y
-  
-
-  ; BodyParts[0].x = player.x, BodyParts[0].y = player.y
-  lda   player.x
-  sta   body_parts_x
-  lda   player.y
-  sta   body_parts_y
-
-  
-  lda   player.length
-  tay
-
-  ; BodyPos == 0? nothing to do...
-  beq   .end
-
-  ; Loop(i) = BodyParts[i] = BodyParts[i-1]
-  ; i = Y
-.loop:
-  
-  ; PTR[i-1] = (Y - 1) * 2
-  tya
-  dec
-  asl
-  ; X = PTR[i-1]
-  tax
-  ; Temp1 = BodyParts[i-1].x 
-  lda     body_parts_x,x
-  sta     Temp1 
-  ; Temp2 = BodyParts[i-1].y
-  lda     body_parts_y,x
-  sta     Temp2
-
-  ; PTR[i] = Y * 2
-  tya
-  asl
-  ; X = PTR[i]
-  tax
-
-  ; BodyParts[i-1].y = Temp2 
-  lda     Temp1
-  sta     body_parts_x,x
-
-  ; BodyParts[i-1].y = Temp2 
-  lda     Temp2
-  sta     body_parts_y,x  
-  
-  dey
-  bne   .loop
-.end:
-  plp
-  rts
-
-CheckFood:
-  php
-  !A16
-  ; X == Food.X?
-  lda   player.x
-  cmp   player.food_x  
-  bne   .end
-  ; Y == Food.Y?
-  lda   player.y
-  cmp   player.food_y 
-  bne   .end
-
-  jsr   GenerateFood
-  inc   player.length
-
-.end:
-  plp
-  rts
-
-
-;; Update player movement using joypad dpad
-UpdateDirectionFromJoypad:
-  !AXY16
-  lda   Joypad1Down
-
-.updateRight:
-  bit.w #!JOY_DPAD_Right
-  beq   .updateLeft
-  ; Update direction
-  !A8
-  lda.b #!DIR_X
-  sta   player.dir
-  jmp   .end
-
-.updateLeft:
-  bit.w   #!JOY_DPAD_Left
-  beq   .updateUp
-  ; Update direction
-  !A8
-  lda.b #!DIR_NX
-  sta   player.dir
-  jmp   .end
-
-.updateUp:
-  bit.w   #!JOY_DPAD_Up
-  beq   .updateDown
-  ; Update direction
-  !A8
-  lda.b #!DIR_Y
-  sta   player.dir
-  jmp   .end
-
-.updateDown:
-  bit.w   #!JOY_DPAD_Down
-  beq   .end
-  ; Update direction
-  !A8
-  lda.b #!DIR_NY
-  sta   player.dir
-
-.end:
-  rts
-
-PlayerMoveLeft:
-  ldx   player.x
-  cpx.w #0
-  beq   .wrap
-  dex
-  stx   player.x
-  jmp   .end
-.wrap:
-  ldx.w #!BOARD_WIDTH
-  stx   player.x
-.end:
-  rts
-
-
-PlayerMoveRight:
-  ldx   player.x
-  cpx.w #!BOARD_WIDTH
-  bcs   .wrap
-  inx
-  stx   player.x
-  jmp   .end
-.wrap:
-  ldx   #$0000
-  stx   player.x
-.end:
-  rts
-
-PlayerMoveUp:
-  ldx   player.y
-  cpx.w #0
-  beq   .wrap
-  dex
-  stx   player.y
-  jmp   .end
-.wrap:
-  ldx.w #!BOARD_HEIGHT
-  stx   player.y
-.end:
-  rts
-
-
-PlayerMoveDown:
-  ldx   player.y
-  cpx.w #!BOARD_HEIGHT
-  beq   .wrap
-  inx
-  stx   player.y
-  jmp   .end
-.wrap:
-  ldx   #$0000
-  stx   player.y
-.end:
-  rts
-
-
-GenerateFood:
-  php
-  !A16
-  lda   #$0000
-  !A8
-  !XY16
-
-  jsr   Rand8
-  and   #$1F  ; X%32
-  tax
   phx
-  jsr   Rand8
-  and   #$1F
-  plx
-.round:
-  cmp   #27
-  ; Y < 17
-  bcc   .ok
-  ; Y = Y/2
-  lsr
-  jmp   .round
-
-.ok:
-  tay
-
-  !A16
-  stx   player.food_x
-  sty   player.food_y
-  plp
-  rts
-
-;; *******************************************************
-;; Update background "animations"
-;; *******************************************************
-UpdateBackground:
-  ; Update scrolling
-  !A8
-  !XY8
-  lda   BG1_SCROLL_X
-  inc
-  sta   BG1_SCROLL_X
-  sta   BG1HOFS
-  sta   BG1VOFS
-
-  jmp   .end
-
-  ; Update mosaic effect
-  ldx   BG1_MOSAIC_TIMER
-  bne   .updateMosaicTimer
-
-  ldx   #60
-  stx   BG1_MOSAIC_TIMER
-
-  lda   BG1_MOSAIC
-  ldx   BG1_MOSAIC_TIMER+1
-  bne   .backward
-  
-.forward:
-  inc
-  cmp   #1
-  bcc   .writeMosaic
-  ldx   #1
-  stx   BG1_MOSAIC_TIMER+1
-  jmp   .writeMosaic
-
-.backward:
-  dec
-  cmp   #0
-  bne   .writeMosaic
-  ldx   #0
-  stx   BG1_MOSAIC_TIMER+1
-
-.writeMosaic:
-  sta   BG1_MOSAIC
-  
-  ; Factor << 4 
-  asl
-  asl
-  asl
-  asl
-  ; BG1 only
-  ora   #$01
-  sta   MOSAIC
-  jmp   .end
-
-.updateMosaicTimer:
-  dex
-  stx   BG1_MOSAIC_TIMER
-.end:
-
-  rts
-
-;; *******************************************************
-;; Drawing logic
-;; *******************************************************
-DrawPlayer:
-  !AXY16
-  ; Clear last position
-  ldx   player.last_y
-  stx   DRAW_TILE_Y
-  ldx   player.last_x
-  stx   DRAW_TILE_X
-  ; Transparent tile
-  ldx.w #$0000
-  stx   DRAW_TILE_ATTR
-  jsr   DrawTileBG1XY
-
-  ; Draw each body part.
-  ldy   player.length
-  
-.drawNextPart:
   phy
 
-  ; PTR = BodyParts[y]
-  tya
-  asl
-  tax
+  !A16
+  lda.w #$0020
+  bit   GSU_SFR     ; wait for GSU...
+	bne   .end
 
-  lda   body_parts_x,x
-  sta   DRAW_TILE_X
-  lda   body_parts_y,x
-  sta   DRAW_TILE_Y
+  !A8
+  lda STAT78
+  bpl .activeFrame
 
-  ; Tile 2, Palette 1, Higher priority 
-  ldx.w #2|(1<<10)|(1<<13)
-  stx   DRAW_TILE_ATTR
-  jsr   DrawTileBG1XY
+  ;;Force VBlank
+  lda   #$80
+  sta   INIDISP
+
+  %LoadToVRAM($700000,ComputeFramebufferSize(2,192),$0000)
+  ; jmp   .end
 
 
-  ply
-  beq   .end
-  dey
-  bne   .drawNextPart
+.activeFrame:
+  !A8
+  lda   #$0F
+  sta   INIDISP
 
 .end:
+  ply
+  plx
+  pla
+  plp
+  rti
 
-  rts
+IRQ:
+  rti
 
-; TODO: Move food to OAM.
-DrawFood:
-  !AXY16
-  ; Draw new position
-  ldx   player.food_y
-  stx   DRAW_TILE_Y
-  ldx   player.food_x
-  stx   DRAW_TILE_X
-  ; Tile 1, Palette 1, Higher priority 
-  ldx.w #1|(1<<10)|(1<<13)
-  stx   DRAW_TILE_ATTR
-  jsr   DrawTileBG1XY
+DummyVector_0100:
+  dw  NMI_WRAM   ;  ABORT/NMI -> 00:0100
+  dw  $00
+  dw  BRK_WRAM   ;  BRK       -> 00:0104
+  dw  $00
+  dw  RESET_WRAM ;  RESET     -> 00:0108
+  dw  $00
+  dw  IRQ_WRAM   ;  IRQ       -> 00:010C
+  dw  $00
+DummyVector_0100_end:
 
-  rts
 
-DrawTileBG1XY:
+; ROM Address
+RunGSUCode:
+; WRAM Address This code will run from $00:0200
+base $200
+RunGSUCode_WRAM:
   php
-  !AXY16
 
-  ; Compute Y index on table (2 bytes per entry)
-  ldy   DRAW_TILE_Y
-  tya
-  ; Y*2
-  asl
-  tay
-  ; X = TileMap ROW (32 tiles per row)
-  ldx   X32LUT,y   
-  ; A = (ROW + X) * 2 byte per tile
-  txa
-  clc
-  adc   DRAW_TILE_X
+  !A8
+  lda   #01
+  sta   GSU_CLSR  ; 1 = Clock 21.477 MHz
+  sta   GSU_CFGR  ; 
+  lda.b #(ScreenFrameBuffer)>>10
+  sta   GSU_SCBR
+  lda   #$00
+  sta   GSU_PBR   ; ProgramBank = 0
+  ; Give GSU exclusive access to ROM/SRAM
+  ; height: 192 4bpp
+  lda   #(!GSU_SCMR_RAN|!GSU_SCMR_ROM|!GSU_SCMR_2BPP|!GSU_SCMR_HEIGHT_192)
+  sta   GSU_SCMR
+  ; Set GSU PC and wakeup GSU
+  !A16
+  lda.w #GSU_Entry
+  sta   GSU_PC
 
-  clc
-  adc.w #CHAR_BGMAP
+  lda.w #$0020
+- bit   GSU_SFR     ; wait for GSU...
+	bne   -
 
-  ; Store TileMap address to VRAM
-  sta   VMADDL
-  ldx.w DRAW_TILE_ATTR
-  stx   VMDATAL
+  !A8
+	stz   GSU_SCMR    ; Give S-CPU ROM/SRAM access
+
   plp
   rts
 
+NMI_WRAM:
+  rti
 
-CHAR_BGMAP = $4000
+IRQ_WRAM:
+  rti
 
-;; RESOURCES...
+BRK_WRAM:
+  rti
 
-;;32x table
-X32LUT:
-  !i = 0
-  while !i <= 32
-    dw !i*32
-    !i #= !i+1
-  endif
+RESET_WRAM:
+- jmp -
 
-; title_pal:
-;   incbin  "gfx/title.pal"
-; title_charset:
-;   incbin  "gfx/title.chr"
-; title_map:
-;   incbin  "gfx/title.map"
+RunGSUCode_WRAM_end:
+base off
+
+GSU_Entry:
+arch superfx
+  ; Opaque
+  ibt     r0,#$00
+  cmode
+
+
+  ; Draw current line
+  move    r7,#DrawColor
+  to      r7
+  ldw     (r7)
+  with    r7
+  and     #3  
+  from    r7
+  color
+
+  ; PLOT
+  iwt   r1,#0 ; X = 100
+
+  move  r9,#LastY
+  to    r9
+  ldw   (r9)
+  move  r2,r9
+
+  iwt   r12,#256
+  ;
+  cache
+  ; Save loop address
+  move  r13,r15
+.repeat:
+  plot
+  loop
+  nop
+
+  rpix
+
+  inc   r9
+  iwt   r8, #192
+  from  r8
+  cmp   r9
+  bpl   .writeback
+  nop
+
+  iwt   r9,#0
+
+
+.writeback:
+  move  r8,#LastY
+  from  r9
+  stw   (r8)
+
+  move  r8,#DrawColor
+  with  r8
+  ldw   (r8)
+  with  r8
+  inc   r8
+  move  r7,#DrawColor
+  from  r8
+  stw   (r7)
+
+  stop
+
+
+macro sfx_push(r)
+  with   r10
+  sub    #2
+  from   <r>
+  stw    (r10)
+endmacro
+
+macro sfx_pop(r)
+  to    <r>
+  ldw   (r10)
+  with  r10
+  add   #4
+endmacro
+
+macro sfx_jsr(addr)
+  link  #4
+  iwt   r15,#addr
+  nop
+endmacro
+
+GSU_EntryX:
+arch superfx
+  iwt     r10,#__gsuStackTop
+  ; Opaque
+  ibt     r0,#$00
+  cmode
+
+  
+
+  ; for (int y = clipMinY; y < clipMaxY; y++) {
+  ;       for (int x = clipMinX; x < clipMaxX; x++) {
+
+  ;           Vertex p{ x,y };
+
+  ;           const float e1 = edgeFunctionf(v1, v2, p);
+  ;           const float e2 = edgeFunctionf(v2, v3, p);
+  ;           const float e3 = edgeFunctionf(v3, v1, p);
+
+  ;           if ((e1 >= 0) && (e2 >= 0) && (e3 >= 0)) {
+  ;               writePixel(g_Framebuffer, x, y, r, g, b);
+  ;           }
+  ;       }
+  ;   }
+
+
+  stop
+
+
+
+
+
+
+; float edgeFunctionf(const Vertex& a, const Vertex& b, const Vertex& c)
+; {
+;     return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
+; }
+; r0 = a.x
+; r3 = a.Y
+; r5 = b.x
+; r7 = b.y
+; r8 = c.x
+; r9 = c.y
+
+EdgeFunction:  
+  ; R8 = CAX = (c.x - a.x)
+  with  r8
+  sub   r0
+  ; R7 = BAY = (b.y - a.y)
+  with  r7
+  sub   r3
+  ; R9 = CAY = (c.y - a.y)
+  with  r9
+  sub   r3
+  ; R5 = BAX = (b.x - a.x)
+  with  r5
+  sub   r0
+  ; (CAX*BAY)
+  move  r6,r7
+  from  r8
+  lmult
+  move  r8,r4
+  ; (CAY*BAX)
+  move  r6,r5
+  from  r9
+  lmult
+  ; R0 = (CAX*BAY)-(CAY*BAX)
+  with  r8
+  sub   r9
+  move  r0,r8
+  jmp   r11
+
+
+;;
+V1: dw 100,20
+V2: dw 23,140
+V3: dw 190,170
+
+
 
 
 title_pal:
   incbin  "gfx/grass.pal"
-title_charset:
-  incbin  "gfx/grass.chr"
-title_map:
-  incbin  "gfx/grass.map"
 
+screen_map:
+  ; !y = 0
+  ; while !y <= 27 ; 192pixels
+  ;   !x = 0
+    
+  ;   while !x < 32
+  ;     if !y < 24 
+  ;       dw !x*24+!y
+  ;     else
+  ;       dw 32*32-1 ; blank tile, last tile.
+  ;     endif
+  ;     !x #= !x+1
+  ;   endif
 
-char_pal:
-  incbin  "gfx/char.pal"
-char_charset:
-  incbin  "gfx/char.chr"
+  ;   !y #= !y+1
+  ; endif
 
+  !y = 0
+  while !y <= 27 ; 192pixels
+    !x = 0
+    
+    while !x < 32
+      dw  !x*24+!y
+      !x #= !x+1
+    endif
 
-__end:
+    !y #= !y+1
+  endif
+  
 
+____end:

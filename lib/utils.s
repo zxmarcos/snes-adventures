@@ -56,27 +56,3 @@ macro EnableNMI()
   sta   NMITIMEN
   plp
 endmacro
-
-
-;; From: https://codebase64.org/doku.php?id=base:small_fast_8-bit_prng
-Rand8:
-  php
-  !A8
-  !XY8
-  lda   rand_seed
-  ldx   rand_seed+1
-  beq   .doEor
-  asl
-  eor   #$FF
-  beq   .noEor ;if the input was $80, skip the EOR
-  bcc   .noEor
-.doEor:
-  eor   #$1d
-.noEor:
-  sta   Temp1
-  sta   rand_seed+1
-  txa
-  adc   Temp1
-  sta   rand_seed
-  plp
-  rts

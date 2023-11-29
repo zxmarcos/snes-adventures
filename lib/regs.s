@@ -213,3 +213,35 @@ DASB7       =   $4377   ;   HDMA Indirect Address REGisters
 A2A7L       =   $4378   ;   HDMA Mid Frame Table Address REGisters (Low)
 A2A7H       =   $4379   ;   HDMA Mid Frame Table Address REGisters (High)
 NTLR7       =   $437A   ;   HDMA Line Counter REGister
+
+
+GSU_SFR     =   $3030   ;   Status flag register
+GSU_BRAMR   =   $3033   ;   Backup RAM register
+GSU_PBR     =   $3034   ;   Program Bank Register
+GSU_ROMBR   =   $3036   ;   Rom bank register
+GSU_CFGR    =   $3037   ;   Control Flags register
+GSU_SCBR    =   $3038   ;   Screen base register
+GSU_CLSR    =   $3039   ;   Clock speed register
+GSU_SCMR    =   $303A   ;   Screen Mode register
+GSU_VCR     =   $303B   ;   Version Code Register
+GSU_RAMBR   =   $303C   ;   RAM bank register
+GSU_CBR     =   $303E   ;   Cache base register
+
+GSU_PC      =   $301E   ;   GSU Program Counter
+
+GSU_CACHE   =   $3100   ;   Start address of GSU instruction cache
+
+
+!GSU_SCMR_2BPP   = $00
+!GSU_SCMR_4BPP   = $01
+!GSU_SCMR_8BPP   = $03
+
+!GSU_SCMR_RAN    = $08
+!GSU_SCMR_ROM    = $10
+
+!GSU_SCMR_HT0          = $04
+!GSU_SCMR_HT1          = $20
+!GSU_SCMR_HEIGHT_128   = $00
+!GSU_SCMR_HEIGHT_160   = !GSU_SCMR_HT0
+!GSU_SCMR_HEIGHT_192   = !GSU_SCMR_HT1
+!GSU_SCMR_HEIGHT_OBJ   = (!GSU_SCMR_HT0|!GSU_SCMR_HT1)

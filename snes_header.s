@@ -19,7 +19,7 @@ db $20
 ; $3X = FastROM (120ns) $XA = HiROM/64K Banks + SPC7110 (Mode 2A Mappable)
 
 ; ROM TYPE (Bits 7-4 = Co-processor, Bits 3-0 = Type)
-db $00
+db $1A
 ;  ||___________________Type:
 ;  |                    $00 = ROM
 ;  |                    $01 = ROM+RAM
@@ -41,7 +41,7 @@ db $01
 ; $06 = 6 Banks = 192Kb (1.50 Mbit), $0C = 128 Banks = 4096Kb (32.00 Mbit)
 
 ; RAM SIZE
-db $00
+db $06
 ; $00 = None, $04 =  16Kb
 ; $01 =  2Kb, $05 =  32Kb
 ; $02 =  4Kb, $06 =  64Kb
@@ -82,7 +82,7 @@ dw $0000 ; BRK VECTOR   (BRK Opcode)
 dw $0000 ; ABORT VECTOR (Unused)
 dw NMI   ; NMI VECTOR   (V-Blank Interrupt)
 dw Start ; RESET VECTOR (Unused)
-dw $0000 ; IRQ VECTOR   (H/V-Timer/External Interrupt)
+dw IRQ   ; IRQ VECTOR   (H/V-Timer/External Interrupt)
 
 ; EMU VECTOR (6502 Mode)
 dw $0000 ; RESERVED
@@ -92,4 +92,4 @@ dw $0000 ; BRK VECTOR   (Unused)
 dw $0000 ; ABORT VECTOR (Unused)
 dw NMI   ; NMI VECTOR   (V-Blank Interrupt)
 dw Start ; RESET VECTOR (CPU is always in 6502 mode on RESET)
-dw $0000 ; IRQ/BRK VECTOR
+dw IRQ   ; IRQ/BRK VECTOR
