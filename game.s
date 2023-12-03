@@ -27,13 +27,13 @@ Start:
 
   
   ; Copy SRAM (GSU) to VRAM
-  %LoadToVRAM($700000,$8000,$0000)
+  %LoadToVRAM($700000,ComputeFramebufferSize(2,192),$0000)
 
   jsr   EnableVideo
 
 .loop:
   wai
-  jsr   RunGSUCode_WRAM
+  ;jsr   RunGSUCode_WRAM
   jmp   .loop
 
 SetupPPU:
@@ -87,6 +87,7 @@ ClearSRAM:
   rts
 
 NMI:
+  rti
   php
   pha
   phx
@@ -119,20 +120,31 @@ NMI:
   plx
   pla
   plp
+
+  %EnableNMI()
   rti
 
 IRQ:
   rti
 
 DummyVector_0100:
-  dw  NMI_WRAM   ;  ABORT/NMI -> 00:0100
-  dw  $00
-  dw  BRK_WRAM   ;  BRK       -> 00:0104
-  dw  $00
-  dw  RESET_WRAM ;  RESET     -> 00:0108
-  dw  $00
-  dw  IRQ_WRAM   ;  IRQ       -> 00:010C
-  dw  $00
+  jmp NMI_WRAM
+  db $00
+  jmp BRK_WRAM
+  db $00
+  jmp RESET_WRAM
+  db $00
+  jmp IRQ_WRAM
+
+
+  ; dw  NMI_WRAM   ;  ABORT/NMI -> 00:0100
+  ; dw  $00
+  ; dw  BRK_WRAM   ;  BRK       -> 00:0104
+  ; dw  $00
+  ; dw  RESET_WRAM ;  RESET     -> 00:0108
+  ; dw  $00
+  ; dw  IRQ_WRAM   ;  IRQ       -> 00:010C
+  ; dw  $00
 DummyVector_0100_end:
 
 
@@ -146,6 +158,7 @@ RunGSUCode_WRAM:
   !A8
   lda   #01
   sta   GSU_CLSR  ; 1 = Clock 21.477 MHz
+  lda.b   #(1<<7)|(1<<5)
   sta   GSU_CFGR  ; 
   lda.b #(ScreenFrameBuffer)>>10
   sta   GSU_SCBR
@@ -157,10 +170,11 @@ RunGSUCode_WRAM:
   sta   GSU_SCMR
   ; Set GSU PC and wakeup GSU
   !A16
-  lda.w #GSU_Entry
+  lda.w #GSU_EntryX
   sta   GSU_PC
 
-  lda.w #$0020
+  !A8
+  lda   #$20
 - bit   GSU_SFR     ; wait for GSU...
 	bne   -
 
@@ -185,87 +199,98 @@ RESET_WRAM:
 RunGSUCode_WRAM_end:
 base off
 
-GSU_Entry:
-arch superfx
-  ; Opaque
-  ibt     r0,#$00
-  cmode
+; ---- CONVENTIONS
+; R10 = Stack pointer
+; R11 = Load Address Pointer
+; 
 
-
-  ; Draw current line
-  move    r7,#DrawColor
-  to      r7
-  ldw     (r7)
-  with    r7
-  and     #3  
-  from    r7
-  color
-
-  ; PLOT
-  iwt   r1,#0 ; X = 100
-
-  move  r9,#LastY
-  to    r9
-  ldw   (r9)
-  move  r2,r9
-
-  iwt   r12,#256
-  ;
-  cache
-  ; Save loop address
-  move  r13,r15
-.repeat:
-  plot
-  loop
-  nop
-
-  rpix
-
-  inc   r9
-  iwt   r8, #192
-  from  r8
-  cmp   r9
-  bpl   .writeback
-  nop
-
-  iwt   r9,#0
-
-
-.writeback:
-  move  r8,#LastY
-  from  r9
-  stw   (r8)
-
-  move  r8,#DrawColor
-  with  r8
-  ldw   (r8)
-  with  r8
-  inc   r8
-  move  r7,#DrawColor
-  from  r8
-  stw   (r7)
-
-  stop
-
-
-macro sfx_push(r)
+macro g_push(r)
   with   r10
   sub    #2
   from   <r>
   stw    (r10)
 endmacro
 
-macro sfx_pop(r)
+macro g_pop(r)
   to    <r>
   ldw   (r10)
   with  r10
-  add   #4
+  add   #2
 endmacro
 
-macro sfx_jsr(addr)
+macro g_jsr(addr)
   link  #4
-  iwt   r15,#addr
+  iwt   r15,#<addr>
   nop
+endmacro
+
+macro g_getw(r,addr)
+  move  r14,#<addr> ; 6 cyc
+  with  <r>         ; 8 cyc
+  getb
+  inc   r14         ; 3 cyc
+  with  <r>
+  getbh
+endmacro
+
+macro g_ldw(r,addr)
+  iwt   <r>,#<addr>
+  with  <r>
+  ldw   (<r>)
+endmacro
+
+; R11? 
+macro g_stw(r,addr)
+  move  r11,#<addr>
+  from  <r>
+  stw   (r11)
+endmacro
+
+macro g_sub(dst,a,b)
+  from <a>
+  to <dst>
+  sub <b>
+endmacro
+
+macro g_add(dst,a,b)
+  from <a>
+  to <dst>
+  add <b>
+endmacro
+
+macro g_ljmp(label)
+  iwt    r11,#<label>
+  jmp    r11
+  nop
+endmacro
+
+macro ComputeAndCheckEdge(A,B)
+  %g_stw(r1,_CX)
+  %g_stw(r2,_CY)
+  ; V1
+  %g_getw(r0,<A>)
+  %g_stw(r0,_AX)
+  %g_getw(r3,<A>+2)
+  %g_stw(r3,_AY)
+  ; V2
+  %g_getw(r0,<B>)
+  %g_stw(r0,_BX)
+  %g_getw(r3,<B>+2)
+  %g_stw(r3,_BY)
+  
+  %g_jsr(EdgeFunction)
+
+  ibt    r3,#0
+  from   r0
+  cmp    r3
+  bge    ?continue
+  nop
+  ; Increment X
+  ; inc    r1
+  %g_ljmp(.blankPixel)
+
+?continue:
+  
 endmacro
 
 GSU_EntryX:
@@ -274,77 +299,232 @@ arch superfx
   ; Opaque
   ibt     r0,#$00
   cmode
+  ibt     r0,#$03
+  color
 
-  
+  %g_jsr(ComputeBBox)
 
-  ; for (int y = clipMinY; y < clipMaxY; y++) {
-  ;       for (int x = clipMinX; x < clipMaxX; x++) {
+.loopY:
+  ; YPixels >= 0
+  %g_ldw(r0,YPixels)
+  move  r1,#0
+  from  r0
+  cmp   r1
+  bpl   .nextY
+  nop
 
-  ;           Vertex p{ x,y };
+  ; End...
+  rpix
+  stop
+  nop
 
-  ;           const float e1 = edgeFunctionf(v1, v2, p);
-  ;           const float e2 = edgeFunctionf(v2, v3, p);
-  ;           const float e3 = edgeFunctionf(v3, v1, p);
 
-  ;           if ((e1 >= 0) && (e2 >= 0) && (e3 >= 0)) {
-  ;               writePixel(g_Framebuffer, x, y, r, g, b);
-  ;           }
-  ;       }
-  ;   }
+.nextY:
+  dec   r0
+  %g_stw(r0,YPixels)
+  ; X = MinX
+  ; Y = MinY
+  %g_ldw(r1,MinX)
+  %g_ldw(r2,MinY)
+  move    r3,r2
+  inc     r3
+  %g_stw(r3,MinY)
+  ; loop X
+  %g_ldw(r11,XPixels)
+  move    r12,r11
+  cache
+  move    r13,r15
 
+.loopX:
+  %ComputeAndCheckEdge(Vertex1,Vertex2)
+  %ComputeAndCheckEdge(Vertex2,Vertex3)
+  %ComputeAndCheckEdge(Vertex3,Vertex1)
+  ; Plot this pixel
+  ibt     r0,#$03
+  color
+  plot
+  bra   .nextPixel
+  nop
+
+.blankPixel:
+  ; ibt     r0,#$01
+  ; color
+  ; plot
+  inc r1
+.nextPixel:
+  loop
+  nop
+  ; Flush pixel cache for this line
+  rpix
+  %g_ljmp(.loopY)
+.end:
+  rpix
 
   stop
+  nop
+    
+  stop
+
+ComputeBBox:
+  %g_push(r11)
+  ; r1 = X1
+  ; r2 = X2
+  ; r3 = X3
+
+  ; Get Min X
+  %g_getw(r1,Vertex1)
+  %g_getw(r2,Vertex2)
+  move      r7,r1
+  move      r8,r2
+  %g_jsr(Min)
+  %g_stw(r7,MinX)
+
+  
+  %g_getw(r1,Vertex3)
+  move      r8,r1
+  %g_jsr(Min)
+  %g_stw(r7,MinX)
+
+  ; Get Max X
+  %g_getw(r1,Vertex1)
+  %g_getw(r2,Vertex2)
+  move      r7,r1
+  move      r8,r2
+  %g_jsr(Max)
+
+  %g_stw(r7,MaxX)
+  
+  %g_getw(r1,Vertex3)
+  move      r8,r1
+  %g_jsr(Max)
+  %g_stw(r7,MaxX)
+
+  ; Get Min Y
+  %g_getw(r1,Vertex1+2)
+  %g_getw(r2,Vertex2+2)
+  move      r7,r1
+  move      r8,r2
+  %g_jsr(Min)
+  %g_stw(r7,MinY)
+  
+  %g_getw(r1,Vertex3+2)
+  move      r8,r1
+  %g_jsr(Min)
+  %g_stw(r7,MinY)
+
+  ; Get Max Y
+  %g_getw(r1,Vertex1+2)
+  %g_getw(r2,Vertex2+2)
+  move      r7,r1
+  move      r8,r2
+  %g_jsr(Max)
+
+  %g_stw(r7,MaxY)
+  
+  %g_getw(r1,Vertex3+2)
+  move      r8,r1
+  %g_jsr(Max)
+  %g_stw(r7,MaxY)
+  
+  %g_ldw(r0,MaxX)
+  %g_ldw(r1,MinX)
+  %g_sub(r0,r0,r1)
+  %g_stw(r0,XPixels)
+
+  %g_ldw(r0,MaxY)
+  %g_ldw(r1,MinY)
+  %g_sub(r0,r0,r1)
+  %g_stw(r0,YPixels)
+
+  %g_pop(r11)
 
 
+  jmp       r11
+  nop
 
+; r7 = A 
+; r8 = B
+Min:
+  from  r7
+  cmp   r8
+  bpl   .minor
+  nop
+  jmp   r11
+  nop
+.minor:
+  move  r7,r8
+  jmp   r11
+  nop
 
-
+; r7 = A 
+; r8 = B
+Max:
+  from  r7
+  cmp   r8
+  bmi   .major
+  nop
+  jmp   r11
+  nop
+.major:
+  move  r7,r8
+  jmp   r11
+  nop
 
 ; float edgeFunctionf(const Vertex& a, const Vertex& b, const Vertex& c)
 ; {
 ;     return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
 ; }
-; r0 = a.x
-; r3 = a.Y
-; r5 = b.x
-; r7 = b.y
-; r8 = c.x
-; r9 = c.y
 
-EdgeFunction:  
-  ; R8 = CAX = (c.x - a.x)
-  with  r8
-  sub   r0
-  ; R7 = BAY = (b.y - a.y)
-  with  r7
-  sub   r3
-  ; R9 = CAY = (c.y - a.y)
-  with  r9
-  sub   r3
-  ; R5 = BAX = (b.x - a.x)
-  with  r5
-  sub   r0
-  ; (CAX*BAY)
-  move  r6,r7
-  from  r8
+macro g_lmult(dst,a,b)
+  move  r6,<b>
+  with  <a>
   lmult
-  move  r8,r4
-  ; (CAY*BAX)
-  move  r6,r5
-  from  r9
-  lmult
-  ; R0 = (CAX*BAY)-(CAY*BAX)
-  with  r8
-  sub   r9
-  move  r0,r8
+  move  <dst>,r4
+endmacro
+
+EdgeFunction: 
+  ; move r0,#1
+  ; jmp r11
+  ; nop
+  
+  ; R0=(c.x - a.x) * R3=(b.y - a.y)
+  %g_ldw(r0,_CX)
+  %g_ldw(r3,_AX)
+  %g_sub(r0,r0,r3)
+
+  %g_ldw(r3,_BY)
+  %g_ldw(r5,_AY)
+  %g_sub(r3,r3,r5)
+
+  %g_lmult(r0,r0,r3)
+  %g_push(r0)
+
+  ; R0=(c.y - a.y) * R3=(b.x - a.x)
+  %g_ldw(r0,_CY)
+  %g_ldw(r3,_AY)
+  %g_sub(r0,r0,r3)
+
+  %g_ldw(r3,_BX)
+  %g_ldw(r5,_AX)
+  %g_sub(r3,r3,r5)
+
+  %g_lmult(r0,r0,r3)
+  move r3,r0
+
+  %g_pop(r0)
+  %g_sub(r0,r0,r3)
+  
   jmp   r11
+  nop
 
 
 ;;
-V1: dw 100,20
-V2: dw 23,140
-V3: dw 190,170
-
+Vertex1: dw 128,20
+Vertex2: dw 10,140
+Vertex3: dw 128+118,170
+; Vertex1: dw 128,20
+; Vertex2: dw 1,170
+; Vertex3: dw 255,170
 
 
 

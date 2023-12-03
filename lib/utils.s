@@ -36,6 +36,8 @@ macro DmaCopyAB(addr,dstReg,length,mode)
   ; Start transfer
   lda.b #%00000001
   sta   MDMAEN
+  lda.b #$00
+  sta   MDMAEN
 endmacro
 
 

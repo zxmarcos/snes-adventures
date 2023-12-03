@@ -239,8 +239,8 @@ GSU_CACHE   =   $3100   ;   Start address of GSU instruction cache
 !GSU_SCMR_RAN    = $08
 !GSU_SCMR_ROM    = $10
 
-!GSU_SCMR_HT0          = $04
-!GSU_SCMR_HT1          = $20
+!GSU_SCMR_HT0          = (1<<2)
+!GSU_SCMR_HT1          = (1<<5)
 !GSU_SCMR_HEIGHT_128   = $00
 !GSU_SCMR_HEIGHT_160   = !GSU_SCMR_HT0
 !GSU_SCMR_HEIGHT_192   = !GSU_SCMR_HT1

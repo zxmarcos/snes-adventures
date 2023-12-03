@@ -12,13 +12,22 @@ base $700000
 
 function ComputeFramebufferSize(bpp,height) = (height/8)*(256/8)*(8*bpp)
 
-ScreenFrameBuffer: skip ComputeFramebufferSize(2,240)
+ScreenFrameBuffer: skip ComputeFramebufferSize(2,192)
 
-LastX: skip 2
-LastY: skip 2
-DrawColor: skip 2
-GTemp1: skip 2
-GTemp2: skip 2
+
+MinX: skip 2
+MaxX: skip 2
+MinY: skip 2
+MaxY: skip 2
+XPixels: skip 2
+YPixels: skip 2
+
+_AX:    skip 2
+_AY:    skip 2
+_BX:    skip 2
+_BY:    skip 2
+_CX:    skip 2
+_CY:    skip 2
 
 __stackBottom:
 skip 2*64
