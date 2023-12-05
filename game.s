@@ -215,7 +215,6 @@ endmacro
 macro g_pop(r)
   to    <r>
   ldw   (r10)
-  with  r10
   add   #2
 endmacro
 
@@ -235,16 +234,12 @@ macro g_getw(r,addr)
 endmacro
 
 macro g_ldw(r,addr)
-  iwt   <r>,#<addr>
-  with  <r>
-  ldw   (<r>)
+  lm  <r>,(<addr>)
 endmacro
 
 ; R11? 
 macro g_stw(r,addr)
-  move  r11,#<addr>
-  from  <r>
-  stw   (r11)
+  sm (<addr>),<r>
 endmacro
 
 macro g_sub(dst,a,b)
