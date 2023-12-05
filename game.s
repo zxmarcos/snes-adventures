@@ -371,7 +371,7 @@ arch superfx
   nop
 
 .nextY:
-
+  cache
   ; Reset last pixel validity
   ibt   r11,#0
 
@@ -380,10 +380,10 @@ arch superfx
 
   ; Reset loop counter = XPixels
   move  r12,r14
-  cache
-  move  r13,r15
-
+  
   ibt    r0,#0
+  move  r13,r15
+  
 .loopX:
   ; w1 >= 0
   from   r8
@@ -413,7 +413,7 @@ arch superfx
   bne   .skipLeftPixels
 
   ; Increment X
-  inc   r1
+  inc     r1
 .nextPixel:
   ; w1 += A23;
   ; w2 += A31;
