@@ -328,7 +328,7 @@ arch superfx
   ; R11 = LastPixelWasValid
   ; R12 = loop counter
   ; R13 = loop pointer
-  ; R14 = ???
+  ; R14 = XPixels
   ; R15 = ProgramCounter
   
   %g_ldw(r3,MinX)
@@ -337,14 +337,16 @@ arch superfx
   move  r2,r4
   %g_ldw(r4,YPixels)
 
+  %g_ldw(r14,XPixels)
+
   %g_ldw(r5,_A12)
   %g_ldw(r6,_A23)
   %g_ldw(r7,_A31)
 
-  nop
-  nop
-  nop
-  nop
+  ; Reload W1,W2,W3
+  %g_ldw(r8,_W1_ROW)
+  %g_ldw(r9,_W2_ROW)
+  %g_ldw(r10,_W3_ROW)
 
 .loopY:
   ibt   r0,#0
@@ -360,11 +362,6 @@ arch superfx
 
 .nextY:
 
-  ; Reload W1,W2,W3
-  %g_ldw(r8,_W1_ROW)
-  %g_ldw(r9,_W2_ROW)
-  %g_ldw(r10,_W3_ROW)
-
   ; Reset last pixel validity
   ibt   r11,#0
 
@@ -372,8 +369,7 @@ arch superfx
   move  r1,r3
 
   ; Reset loop counter = XPixels
-  %g_ldw(r0,XPixels)
-  move  r12,r0
+  move  r12,r14
   cache
   move  r13,r15
 
@@ -427,22 +423,23 @@ arch superfx
   ;w2_row += B31;
   ;w3_row += B12;
 
-  %g_ldw(r8,_W1_ROW)
-  %g_ldw(r9,_W2_ROW)
-  %g_ldw(r10,_W3_ROW)
-
   %g_ldw(r0,_B23)
+  %g_ldw(r8,_W1_ROW)
   %g_add(r8,r8,r0)
-
+  from  r8
+  sbk
+  
   %g_ldw(r0,_B31)
+  %g_ldw(r9,_W2_ROW)
   %g_add(r9,r9,r0)
-  
+  from  r9
+  sbk
+
   %g_ldw(r0,_B12)
+  %g_ldw(r10,_W3_ROW)
   %g_add(r10,r10,r0)
-  
-  %g_stw(r8,_W1_ROW)
-  %g_stw(r9,_W2_ROW)
-  %g_stw(r10,_W3_ROW)
+  from  r10
+  sbk
 
   ; Y++
   inc   r2
