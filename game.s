@@ -248,9 +248,19 @@ macro g_sub(dst,a,b)
   sub <b>
 endmacro
 
+macro g_sub2(dst,b)
+  with <dst>
+  sub <b>
+endmacro
+
 macro g_add(dst,a,b)
   from <a>
   to <dst>
+  add <b>
+endmacro
+
+macro g_add2(dst,b)
+  with <dst>
   add <b>
 endmacro
 
@@ -373,7 +383,6 @@ arch superfx
   cache
   move  r13,r15
 
-
   ibt    r0,#0
 .loopX:
   ; w1 >= 0
@@ -391,17 +400,17 @@ arch superfx
   nop
   
   plot
-  ; valid pixel
-  ibt   r11,#1
+ 
   bra   .nextPixel
-  nop
+  ; valid pixel
+  ; 1 byte instruction
+  inc     r11
 
 .blankPixel:
 
-  ; Check if last pixel was valid.
-  with  r11
-  lsr
-  bcs   .skipLeftPixels
+  ; Check if last pixel was valid. != 0
+  moves   r11,r11
+  bne   .skipLeftPixels
 
   ; Increment X
   inc   r1
@@ -409,9 +418,9 @@ arch superfx
   ; w1 += A23;
   ; w2 += A31;
   ; w3 += A12;
-  %g_add(r8,r8,r6)
-  %g_add(r9,r9,r7)
-  %g_add(r10,r10,r5)
+  %g_add2(r8,r6)
+  %g_add2(r9,r7)
+  %g_add2(r10,r5)
 
   loop
   nop
@@ -425,28 +434,28 @@ arch superfx
 
   %g_ldw(r0,_B23)
   %g_ldw(r8,_W1_ROW)
-  %g_add(r8,r8,r0)
+  %g_add2(r8,r0)
   from  r8
   sbk
   
   %g_ldw(r0,_B31)
   %g_ldw(r9,_W2_ROW)
-  %g_add(r9,r9,r0)
+  %g_add2(r9,r0)
   from  r9
   sbk
 
   %g_ldw(r0,_B12)
   %g_ldw(r10,_W3_ROW)
-  %g_add(r10,r10,r0)
+  %g_add2(r10,r0)
   from  r10
   sbk
 
   ; Y++
   inc   r2
+  bra   .loopY
   ; YPixels--
   dec   r4
-  %g_ljmp(.loopY)
-  nop
+
 .end:
   rpix
   stop
@@ -458,34 +467,34 @@ TriangleSetup:
   ; ---
   %g_getw(r0,Vertex1+2)
   %g_getw(r1,Vertex2+2)
-  %g_sub(r0,r0,r1)
+  %g_sub2(r0,r1)
   %g_stw(r0,_A12)
 
   %g_getw(r2,Vertex2)
   %g_getw(r3,Vertex1)
-  %g_sub(r2,r2,r3)
+  %g_sub2(r2,r3)
   %g_stw(r2,_B12)
 
   ; ---
   %g_getw(r0,Vertex2+2)
   %g_getw(r1,Vertex3+2)
-  %g_sub(r0,r0,r1)
+  %g_sub2(r0,r1)
   %g_stw(r0,_A23)
 
   %g_getw(r2,Vertex3)
   %g_getw(r3,Vertex2)
-  %g_sub(r2,r2,r3)
+  %g_sub2(r2,r3)
   %g_stw(r2,_B23)
 
   ; ---
   %g_getw(r0,Vertex3+2)
   %g_getw(r1,Vertex1+2)
-  %g_sub(r0,r0,r1)
+  %g_sub2(r0,r1)
   %g_stw(r0,_A31)
 
   %g_getw(r2,Vertex1)
   %g_getw(r3,Vertex3)
-  %g_sub(r2,r2,r3)
+  %g_sub2(r2,r3)
   %g_stw(r2,_B31)
 
   %g_pop(r11)
