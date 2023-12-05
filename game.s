@@ -166,6 +166,7 @@ RunGSUCode_WRAM:
   sta   GSU_PBR   ; ProgramBank = 0
   ; Give GSU exclusive access to ROM/SRAM
   ; height: 192 4bpp
+
   lda   #(!GSU_SCMR_RAN|!GSU_SCMR_ROM|!GSU_SCMR_2BPP|!GSU_SCMR_HEIGHT_192)
   sta   GSU_SCMR
   ; Set GSU PC and wakeup GSU
@@ -264,7 +265,21 @@ macro g_ljmp(label)
   nop
 endmacro
 
-macro ComputeAndCheckEdge(A,B)
+macro g_rts()
+  jmp    r11
+  nop
+endmacro
+
+macro g_lmult(dst,a,b)
+  move  r6,<b>
+  with  <a>
+  lmult
+  move  <dst>,r4
+endmacro
+
+
+
+macro orient2D(A,B,dst)
   %g_stw(r1,_CX)
   %g_stw(r2,_CY)
   ; V1
@@ -278,21 +293,12 @@ macro ComputeAndCheckEdge(A,B)
   %g_getw(r3,<B>+2)
   %g_stw(r3,_BY)
   
-  %g_jsr(EdgeFunction)
-
-  ibt    r3,#0
-  from   r0
-  cmp    r3
-  bge    ?continue
-  nop
-  ; Increment X
-  ; inc    r1
-  %g_ljmp(.blankPixel)
-
-?continue:
-  
+  %g_jsr(Orient2D)
+  %g_stw(r0,<dst>)
 endmacro
 
+
+; https://fgiesen.wordpress.com/2013/02/10/optimizing-the-basic-rasterizer/
 GSU_EntryX:
 arch superfx
   iwt     r10,#__gsuStackTop
@@ -303,67 +309,183 @@ arch superfx
   color
 
   %g_jsr(ComputeBBox)
+  ; Triangle setup
+  %g_jsr(TriangleSetup)
+
+  %g_ldw(r1,MinX)
+  %g_ldw(r2,MinY)
+  %orient2D(Vertex2,Vertex3,_W1_ROW)
+  %orient2D(Vertex3,Vertex1,_W2_ROW)
+  %orient2D(Vertex1,Vertex2,_W3_ROW)
+
+  ; Maximum register pressure!
+  ; R0 = scratch
+  ; R1 = X
+  ; R2 = Y
+  ; R3 = XMin
+  ; R4 = YPixels
+  ; R5 = A12
+  ; R6 = A23
+  ; R7 = A31
+  ; R8 = W0
+  ; R9 = W1
+  ; R10 = W2
+  ; R11 = scratch and store address pointer
+  ; R12 = loop counter
+  ; R13 = loop pointer
+  ; R14 = ???
+  ; R15 = ProgramCounter
+  
+  %g_ldw(r3,MinX)
+  %g_ldw(r4,MinY)
+  move  r1,r3
+  move  r2,r4
+  %g_ldw(r4,YPixels)
+
+  %g_ldw(r5,_A12)
+  %g_ldw(r6,_A23)
+  %g_ldw(r7,_A31)
+
+  nop
+  nop
+  nop
+  nop
 
 .loopY:
-  ; YPixels >= 0
-  %g_ldw(r0,YPixels)
-  move  r1,#0
-  from  r0
-  cmp   r1
+  ibt   r0,#0
+  from  r4
+  cmp   r0
   bpl   .nextY
   nop
 
-  ; End...
+  ; End
   rpix
   stop
   nop
 
-
 .nextY:
-  dec   r0
-  %g_stw(r0,YPixels)
-  ; X = MinX
-  ; Y = MinY
-  %g_ldw(r1,MinX)
-  %g_ldw(r2,MinY)
-  move    r3,r2
-  inc     r3
-  %g_stw(r3,MinY)
-  ; loop X
-  %g_ldw(r11,XPixels)
-  move    r12,r11
+
+  ; Reload W1,W2,W3
+  %g_ldw(r8,_W1_ROW)
+  %g_ldw(r9,_W2_ROW)
+  %g_ldw(r10,_W3_ROW)
+
+  ; Reset X = XMin
+  move  r1,r3
+
+  ; Reset loop counter = XPixels
+  %g_ldw(r0,XPixels)
+  move  r12,r0
   cache
-  move    r13,r15
+  move  r13,r15
 
 .loopX:
-  %ComputeAndCheckEdge(Vertex1,Vertex2)
-  %ComputeAndCheckEdge(Vertex2,Vertex3)
-  %ComputeAndCheckEdge(Vertex3,Vertex1)
-  ; Plot this pixel
-  ibt     r0,#$03
-  color
+  ibt    r0,#0
+  ; w1 >= 0
+  from   r8
+  cmp    r0
+  blt    .blankPixel
+  ; w2 >= 0
+  from   r9
+  cmp    r0
+  blt    .blankPixel
+  ; w3 >= 0
+  from   r10
+  cmp    r0
+  blt    .blankPixel
+  nop
+  
   plot
   bra   .nextPixel
   nop
 
 .blankPixel:
-  ; ibt     r0,#$01
-  ; color
-  ; plot
-  inc r1
+  ; Increment X
+  inc   r1
 .nextPixel:
+  ; w1 += A23;
+  ; w2 += A31;
+  ; w3 += A12;
+  %g_add(r8,r8,r6)
+  %g_add(r9,r9,r7)
+  %g_add(r10,r10,r5)
+
   loop
   nop
+  
   ; Flush pixel cache for this line
   rpix
+
+  ;w1_row += B23;
+  ;w2_row += B31;
+  ;w3_row += B12;
+
+  %g_ldw(r8,_W1_ROW)
+  %g_ldw(r9,_W2_ROW)
+  %g_ldw(r10,_W3_ROW)
+
+  %g_ldw(r0,_B23)
+  %g_add(r8,r8,r0)
+
+  %g_ldw(r0,_B31)
+  %g_add(r9,r9,r0)
+  
+  %g_ldw(r0,_B12)
+  %g_add(r10,r10,r0)
+  
+  %g_stw(r8,_W1_ROW)
+  %g_stw(r9,_W2_ROW)
+  %g_stw(r10,_W3_ROW)
+
+  ; Y++
+  inc   r2
+  ; YPixels--
+  dec   r4
   %g_ljmp(.loopY)
+  nop
 .end:
   rpix
-
   stop
   nop
-    
-  stop
+
+
+TriangleSetup:
+  %g_push(r11)
+  ; ---
+  %g_getw(r0,Vertex1+2)
+  %g_getw(r1,Vertex2+2)
+  %g_sub(r0,r0,r1)
+  %g_stw(r0,_A12)
+
+  %g_getw(r2,Vertex2)
+  %g_getw(r3,Vertex1)
+  %g_sub(r2,r2,r3)
+  %g_stw(r2,_B12)
+
+  ; ---
+  %g_getw(r0,Vertex2+2)
+  %g_getw(r1,Vertex3+2)
+  %g_sub(r0,r0,r1)
+  %g_stw(r0,_A23)
+
+  %g_getw(r2,Vertex3)
+  %g_getw(r3,Vertex2)
+  %g_sub(r2,r2,r3)
+  %g_stw(r2,_B23)
+
+  ; ---
+  %g_getw(r0,Vertex3+2)
+  %g_getw(r1,Vertex1+2)
+  %g_sub(r0,r0,r1)
+  %g_stw(r0,_A31)
+
+  %g_getw(r2,Vertex1)
+  %g_getw(r3,Vertex3)
+  %g_sub(r2,r2,r3)
+  %g_stw(r2,_B31)
+
+  %g_pop(r11)
+  %g_rts()
 
 ComputeBBox:
   %g_push(r11)
@@ -470,41 +592,28 @@ Max:
   jmp   r11
   nop
 
-; float edgeFunctionf(const Vertex& a, const Vertex& b, const Vertex& c)
-; {
-;     return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
-; }
 
-macro g_lmult(dst,a,b)
-  move  r6,<b>
-  with  <a>
-  lmult
-  move  <dst>,r4
-endmacro
 
-EdgeFunction: 
+Orient2D: 
   ; move r0,#1
   ; jmp r11
   ; nop
-  
-  ; R0=(c.x - a.x) * R3=(b.y - a.y)
-  %g_ldw(r0,_CX)
+  %g_ldw(r0,_BX)
   %g_ldw(r3,_AX)
   %g_sub(r0,r0,r3)
 
-  %g_ldw(r3,_BY)
+  %g_ldw(r3,_CY)
   %g_ldw(r5,_AY)
   %g_sub(r3,r3,r5)
 
   %g_lmult(r0,r0,r3)
   %g_push(r0)
 
-  ; R0=(c.y - a.y) * R3=(b.x - a.x)
-  %g_ldw(r0,_CY)
+  %g_ldw(r0,_BY)
   %g_ldw(r3,_AY)
   %g_sub(r0,r0,r3)
 
-  %g_ldw(r3,_BX)
+  %g_ldw(r3,_CX)
   %g_ldw(r5,_AX)
   %g_sub(r3,r3,r5)
 
@@ -517,37 +626,15 @@ EdgeFunction:
   jmp   r11
   nop
 
-
-;;
-Vertex1: dw 128,20
-Vertex2: dw 10,140
-Vertex3: dw 128+118,170
-; Vertex1: dw 128,20
-; Vertex2: dw 1,170
-; Vertex3: dw 255,170
-
+Vertex1: dw 128,10
+Vertex2: dw 200,130
+Vertex3: dw 56,130
 
 
 title_pal:
   incbin  "gfx/grass.pal"
 
 screen_map:
-  ; !y = 0
-  ; while !y <= 27 ; 192pixels
-  ;   !x = 0
-    
-  ;   while !x < 32
-  ;     if !y < 24 
-  ;       dw !x*24+!y
-  ;     else
-  ;       dw 32*32-1 ; blank tile, last tile.
-  ;     endif
-  ;     !x #= !x+1
-  ;   endif
-
-  ;   !y #= !y+1
-  ; endif
-
   !y = 0
   while !y <= 27 ; 192pixels
     !x = 0
