@@ -325,7 +325,7 @@ arch superfx
   ; R8 = W0
   ; R9 = W1
   ; R10 = W2
-  ; R11 = scratch and store address pointer
+  ; R11 = LastPixelWasValid
   ; R12 = loop counter
   ; R13 = loop pointer
   ; R14 = ???
@@ -365,6 +365,9 @@ arch superfx
   %g_ldw(r9,_W2_ROW)
   %g_ldw(r10,_W3_ROW)
 
+  ; Reset last pixel validity
+  ibt   r11,#0
+
   ; Reset X = XMin
   move  r1,r3
 
@@ -374,8 +377,9 @@ arch superfx
   cache
   move  r13,r15
 
-.loopX:
+
   ibt    r0,#0
+.loopX:
   ; w1 >= 0
   from   r8
   cmp    r0
@@ -391,10 +395,18 @@ arch superfx
   nop
   
   plot
+  ; valid pixel
+  ibt   r11,#1
   bra   .nextPixel
   nop
 
 .blankPixel:
+
+  ; Check if last pixel was valid.
+  with  r11
+  lsr
+  bcs   .skipLeftPixels
+
   ; Increment X
   inc   r1
 .nextPixel:
@@ -407,7 +419,7 @@ arch superfx
 
   loop
   nop
-  
+.skipLeftPixels:
   ; Flush pixel cache for this line
   rpix
 
